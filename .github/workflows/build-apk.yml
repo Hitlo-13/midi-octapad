@@ -16,7 +16,7 @@ jobs:
       - name: Setup Node.js
         uses: actions/setup-node@v4
         with:
-          node-version: 20
+          node-version: 22
 
       - name: Setup Java JDK 17
         uses: actions/setup-java@v4
@@ -36,7 +36,6 @@ jobs:
 
       - name: Patch Duplicate Kotlin Classes
         run: |
-          # Root build.gradle me capability resolution rule daalna taaki duplicate jdk8 drop ho sake
           cat << 'EOF' >> android/app/build.gradle
 
           configurations.all {
