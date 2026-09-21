@@ -22,7 +22,10 @@ jobs:
         uses: actions/setup-java@v4
         with:
           distribution: 'zulu'
-          java-version: '21'
+          java-version: '17'
+
+      - name: Setup Android SDK Tools
+        uses: android-actions/setup-android@v3
 
       - name: Prepare Web Directory & Assets
         run: |
@@ -34,30 +37,27 @@ jobs:
           npx cap add android
           npx cap sync android
 
-      - name: Fix Kotlin Duplicate Classes Globally
+      - name: Fix Target and Min SDK for Android 13
         run: |
-          cat << 'EOF' >> android/build.gradle
-          allprojects {
-              configurations.all {
-                  resolutionStrategy {
-                      eachDependency { DependencyResolveDetails details ->
-                          if (details.requested.group == 'org.jetbrains.kotlin') {
-                              details.useVersion '1.8.22'
-                          }
-                      }
-                  }
-              }
-          }
-          EOF
+          sed -i 's/minSdkVersion = .*/minSdkVersion = 24/' android/variables.gradle || true
+          sed -i 's/targetSdkVersion = .*/targetSdkVersion = 33/' android/variables.gradle || true
 
-      - name: Build Debug APK
+      - name: Build and Sign APK with v2/v3 Signatures
         run: |
           cd android
           chmod +x gradlew
-          ./gradlew assembleDebug
+          ./gradlew assembleRelease
+          
+          # Keystore generate karna
+          keytool -genkeypair -v -keystore release.jks -alias octapad -keyalg RSA -keysize 2048 -validity 10000 -storepass 123456 -keypass 123456 -dname "CN=Hitlo, OU=App, O=Dev, L=City, S=State, C=IN"
+          
+          # Align aur official apksigner (v2+v3 sign)
+          BUILD_TOOLS_PATH=$ANDROID_HOME/build-tools/34.0.0
+          $BUILD_TOOLS_PATH/zipalign -v -p 4 app/build/outputs/apk/release/app-release-unsigned.apk aligned.apk
+          $BUILD_TOOLS_PATH/apksigner sign --ks release.jks --ks-pass pass:123456 --ks-key-alias octapad --key-pass pass:123456 --out MIDI-Octapad.apk aligned.apk
 
       - name: Upload APK Artifact
         uses: actions/upload-artifact@v4
         with:
-          name: MIDI-Octapad-APK
-          path: android/app/build/outputs/apk/debug/app-debug.apk
+          name: MIDI-Octapad-Installable-APK
+          path: android/MIDI-Octapad.apk
