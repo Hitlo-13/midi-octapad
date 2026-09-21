@@ -1,4 +1,4 @@
-name: Build Android APK
+name: Build MIDI Octapad APK
 
 on:
   push:
@@ -10,7 +10,7 @@ jobs:
     runs-on: ubuntu-latest
 
     steps:
-      - name: Checkout Source Code
+      - name: Checkout Repository
         uses: actions/checkout@v4
 
       - name: Setup Node.js
@@ -24,29 +24,24 @@ jobs:
           distribution: 'temurin'
           java-version: '17'
 
-      - name: Initialize App & Setup Capacitor
+      - name: Install Dependencies & Prepare Web Assets
         run: |
           mkdir -p www
-          cp -r *.html *.js *.css www/ 2>/dev/null || true
+          cp index.html www/
           npm init -y
           npm install @capacitor/core @capacitor/cli @capacitor/android
-          npx cap init "MIDI Octapad" "com.hitlo.midioctapad" --web-dir "www"
+          npx cap init "MIDI Octapad" "com.hitlo.midioctapad" --web-dir www
           npx cap add android
 
-      - name: Build and Sign APK
+      - name: Fix BouncyCastle & Build Debug APK
         run: |
           cd android
-          echo "distributionBase=GRADLE_USER_HOME" > gradle/wrapper/gradle-wrapper.properties
-          echo "distributionPath=wrapper/dists" >> gradle/wrapper/gradle-wrapper.properties
-          echo "distributionUrl=https\://services.gradle.org/distributions/gradle-8.2.1-bin.zip" >> gradle/wrapper/gradle-wrapper.properties
-          echo "zipStoreBase=GRADLE_USER_HOME" >> gradle/wrapper/gradle-wrapper.properties
-          echo "zipStorePath=wrapper/dists" >> gradle/wrapper/gradle-wrapper.properties
           chmod +x gradlew
-          ./gradlew assembleDebug --no-daemon
+          # --no-parallel se jar collision/corruption khatam ho jati hai
+          ./gradlew assembleDebug --no-daemon --no-parallel --refresh-dependencies
 
-      - name: Upload APK
+      - name: Upload Finished APK
         uses: actions/upload-artifact@v4
         with:
-          name: midi-octapad-apk
-          path: android/app/build/outputs/apk/debug/app-debug.apk
-          
+          name: MIDI-Octapad-Debug-APK
+          path: android/app/build/outputs/apk/debug/*.apk
