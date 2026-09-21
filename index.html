@@ -1,0 +1,207 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no">
+<title>MIDI Octapad</title>
+<style>
+  * { box-sizing: border-box; margin: 0; padding: 0; user-select: none; -webkit-user-select: none; }
+  body {
+    background-color: #101114;
+    color: #fff;
+    font-family: Arial, sans-serif;
+    height: 100vh;
+    display: flex;
+    flex-direction: column;
+    overflow: hidden;
+  }
+
+  /* Top Status & Controls */
+  header {
+    display: flex;
+    justify-content: space-between;
+    align-items: center;
+    background: #1c1d22;
+    padding: 6px 12px;
+    border-bottom: 2px solid #2a2c35;
+  }
+  .title { font-weight: bold; font-size: 14px; letter-spacing: 1px; color: #00e5ff; }
+  .status { font-size: 11px; color: #888; }
+  .btn-icon {
+    background: #2b2d38;
+    color: #fff;
+    border: 1px solid #444;
+    padding: 4px 10px;
+    border-radius: 4px;
+    font-size: 12px;
+    cursor: pointer;
+  }
+
+  /* Main Pad Surface */
+  .pad-matrix {
+    flex: 1;
+    display: grid;
+    grid-template-columns: repeat(4, 1fr);
+    grid-template-rows: repeat(2, 1fr);
+    gap: 8px;
+    padding: 8px;
+  }
+
+  .pad {
+    background: #252830;
+    border: 2px solid #3c404d;
+    border-radius: 8px;
+    display: flex;
+    flex-direction: column;
+    justify-content: space-between;
+    padding: 8px;
+    position: relative;
+    touch-action: none;
+    cursor: pointer;
+  }
+  .pad.active {
+    background: #00e5ff;
+    border-color: #fff;
+    color: #000;
+  }
+  .pad-name { font-weight: bold; font-size: 14px; }
+  .pad-note { font-size: 10px; opacity: 0.7; }
+  .velocity-hint { font-size: 9px; align-self: flex-end; opacity: 0.5; }
+
+  /* Slide Modal */
+  #settingsModal {
+    display: none;
+    position: absolute;
+    top: 40px;
+    right: 10px;
+    background: #1f222b;
+    border: 1px solid #444;
+    border-radius: 6px;
+    padding: 12px;
+    z-index: 100;
+    width: 220px;
+  }
+  #settingsModal select, #settingsModal button {
+    width: 100%;
+    margin-top: 8px;
+    padding: 6px;
+    background: #111;
+    color: #fff;
+    border: 1px solid #555;
+    border-radius: 4px;
+  }
+</style>
+</head>
+<body>
+
+<header>
+  <div>
+    <span class="title">OCTA-MIDI</span>
+    <span class="status" id="midiStatus">Checking MIDI...</span>
+  </div>
+  <button class="btn-icon" id="btnSettings">:: MORE</button>
+</header>
+
+<div class="pad-matrix" id="padGrid"></div>
+
+<div id="settingsModal">
+  <div style="font-size: 12px; font-weight: bold; margin-bottom: 6px;">MIDI Output Select</div>
+  <select id="midiOutputs"><option>No Ports Found</option></select>
+  <button id="closeModal">Close</button>
+</div>
+
+<script>
+  let midiAccess = null;
+  let activeOutput = null;
+
+  const padsConfig = [
+    { id: 1, name: "Crash", note: 49 },
+    { id: 2, name: "Tom 1", note: 48 },
+    { id: 3, name: "Tom 2", note: 45 },
+    { id: 4, name: "Ride", note: 51 },
+    { id: 5, name: "Snare", note: 38 },
+    { id: 6, name: "Kick", note: 36 },
+    { id: 7, name: "Hi-Hat", note: 42 },
+    { id: 8, name: "Floor Tom", note: 41 }
+  ];
+
+  const grid = document.getElementById("padGrid");
+
+  padsConfig.forEach(p => {
+    const el = document.createElement("div");
+    el.className = "pad";
+    el.innerHTML = `
+      <span class="pad-name">${p.name}</span>
+      <span class="pad-note">Note ${p.note}</span>
+      <span class="velocity-hint">Touch Velocity</span>
+    `;
+
+    // Dynamic Touch & Velocity Mapping
+    const triggerPad = (e) => {
+      e.preventDefault();
+      const rect = el.getBoundingClientRect();
+      const clientY = e.touches ? e.touches[0].clientY : e.clientY;
+      const relativeY = clientY - rect.top;
+      
+      // Top side tap = 127 (Full velocity), Bottom side = 40 (Low velocity)
+      let velocity = Math.round(127 - (relativeY / rect.height) * 87);
+      velocity = Math.max(30, Math.min(127, velocity));
+
+      sendMidiNote(p.note, velocity);
+      el.classList.add("active");
+      setTimeout(() => el.classList.remove("active"), 80);
+    };
+
+    el.addEventListener("touchstart", triggerPad, { passive: false });
+    el.addEventListener("mousedown", triggerPad);
+    grid.appendChild(el);
+  });
+
+  // Web MIDI Handler
+  if (navigator.requestMIDIAccess) {
+    navigator.requestMIDIAccess({ sysex: false }).then(access => {
+      midiAccess = access;
+      updateMidiOutputs();
+      midiAccess.onstatechange = updateMidiOutputs;
+    }).catch(() => {
+      document.getElementById("midiStatus").innerText = "MIDI Blocked/Unavailable";
+    });
+  } else {
+    document.getElementById("midiStatus").innerText = "No Web MIDI Support";
+  }
+
+  function updateMidiOutputs() {
+    const selector = document.getElementById("midiOutputs");
+    selector.innerHTML = "";
+    const outputs = Array.from(midiAccess.outputs.values());
+    
+    if (outputs.length > 0) {
+      activeOutput = outputs[0];
+      document.getElementById("midiStatus").innerText = "Connected: " + activeOutput.name;
+      outputs.forEach(out => {
+        const opt = document.createElement("option");
+        opt.value = out.id;
+        opt.text = out.name;
+        selector.appendChild(opt);
+      });
+    } else {
+      activeOutput = null;
+      document.getElementById("midiStatus").innerText = "No MIDI Cable/Port";
+      selector.innerHTML = "<option>Plug USB Cable</option>";
+    }
+  }
+
+  function sendMidiNote(note, velocity) {
+    if (activeOutput) {
+      activeOutput.send([0x99, note, velocity]); // Note On (Channel 10 Drums)
+      setTimeout(() => activeOutput.send([0x89, note, 0]), 100); // Note Off
+    }
+  }
+
+  // Modal logic
+  const modal = document.getElementById("settingsModal");
+  document.getElementById("btnSettings").onclick = () => modal.style.display = "block";
+  document.getElementById("closeModal").onclick = () => modal.style.display = "none";
+</script>
+</body>
+</html>
