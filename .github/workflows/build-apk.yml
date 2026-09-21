@@ -18,13 +18,13 @@ jobs:
         with:
           node-version: 20
 
-      - name: Setup Java JDK
+      - name: Setup Java JDK 21
         uses: actions/setup-java@v4
         with:
           distribution: 'zulu'
-          java-version: '17'
+          java-version: '21'
 
-      - name: Prepare Web Directory & Assets
+      - name: Prepare Web Directory & Capacitor
         run: |
           mkdir -p www
           cp index.html www/
@@ -36,35 +36,31 @@ jobs:
 
       - name: Configure Keystore & Release Signing
         run: |
-          # Create official release keystore
           keytool -genkeypair -v -keystore android/app/release.keystore -alias octapad -keyalg RSA -keysize 2048 -validity 10000 -storepass 123456 -keypass 123456 -dname "CN=Hitlo, OU=App, O=Dev, L=City, S=State, C=IN"
           
-          # Inject signing config directly into Gradle so it signs v1, v2 & v3 automatically
-          cat << 'EOF' > update_build.py
-          with open("android/app/build.gradle", "r") as f:
-              content = f.read()
+          python3 -c '
+with open("android/app/build.gradle", "r") as f:
+    text = f.read()
 
-          signing_block = """
-              signingConfigs {
-                  release {
-                      storeFile file('release.keystore')
-                      storePassword '123456'
-                      keyAlias 'octapad'
-                      keyPassword '123456'
-                      v1SigningEnabled true
-                      v2SigningEnabled true
-                  }
-              }
-          """
-          content = content.replace("android {", "android {\n" + signing_block)
-          content = content.replace("buildTypes {\n        release {", "buildTypes {\n        release {\n            signingConfig signingConfigs.release")
+signing = """
+    signingConfigs {
+        release {
+            storeFile file("release.keystore")
+            storePassword "123456"
+            keyAlias "octapad"
+            keyPassword "123456"
+            v1SigningEnabled true
+            v2SigningEnabled true
+        }
+    }
+"""
+text = text.replace("android {", "android {" + signing)
+text = text.replace("buildTypes {", "buildTypes {\n        release {\n            signingConfig signingConfigs.release\n        }")
+with open("android/app/build.gradle", "w") as f:
+    f.write(text)
+'
 
-          with open("android/app/build.gradle", "w") as f:
-              f.write(content)
-          EOF
-          python3 update_build.py
-
-      - name: Build Signed APK
+      - name: Build Signed Release APK
         run: |
           cd android
           chmod +x gradlew
