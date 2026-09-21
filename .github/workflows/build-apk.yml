@@ -24,9 +24,6 @@ jobs:
           distribution: 'zulu'
           java-version: '17'
 
-      - name: Setup Android SDK Tools
-        uses: android-actions/setup-android@v3
-
       - name: Prepare Web Directory & Assets
         run: |
           mkdir -p www
@@ -37,27 +34,44 @@ jobs:
           npx cap add android
           npx cap sync android
 
-      - name: Fix Target and Min SDK for Android 13
+      - name: Configure Keystore & Release Signing
         run: |
-          sed -i 's/minSdkVersion = .*/minSdkVersion = 24/' android/variables.gradle || true
-          sed -i 's/targetSdkVersion = .*/targetSdkVersion = 33/' android/variables.gradle || true
+          # Create official release keystore
+          keytool -genkeypair -v -keystore android/app/release.keystore -alias octapad -keyalg RSA -keysize 2048 -validity 10000 -storepass 123456 -keypass 123456 -dname "CN=Hitlo, OU=App, O=Dev, L=City, S=State, C=IN"
+          
+          # Inject signing config directly into Gradle so it signs v1, v2 & v3 automatically
+          cat << 'EOF' > update_build.py
+          with open("android/app/build.gradle", "r") as f:
+              content = f.read()
 
-      - name: Build and Sign APK with v2/v3 Signatures
+          signing_block = """
+              signingConfigs {
+                  release {
+                      storeFile file('release.keystore')
+                      storePassword '123456'
+                      keyAlias 'octapad'
+                      keyPassword '123456'
+                      v1SigningEnabled true
+                      v2SigningEnabled true
+                  }
+              }
+          """
+          content = content.replace("android {", "android {\n" + signing_block)
+          content = content.replace("buildTypes {\n        release {", "buildTypes {\n        release {\n            signingConfig signingConfigs.release")
+
+          with open("android/app/build.gradle", "w") as f:
+              f.write(content)
+          EOF
+          python3 update_build.py
+
+      - name: Build Signed APK
         run: |
           cd android
           chmod +x gradlew
           ./gradlew assembleRelease
-          
-          # Keystore generate karna
-          keytool -genkeypair -v -keystore release.jks -alias octapad -keyalg RSA -keysize 2048 -validity 10000 -storepass 123456 -keypass 123456 -dname "CN=Hitlo, OU=App, O=Dev, L=City, S=State, C=IN"
-          
-          # Align aur official apksigner (v2+v3 sign)
-          BUILD_TOOLS_PATH=$ANDROID_HOME/build-tools/34.0.0
-          $BUILD_TOOLS_PATH/zipalign -v -p 4 app/build/outputs/apk/release/app-release-unsigned.apk aligned.apk
-          $BUILD_TOOLS_PATH/apksigner sign --ks release.jks --ks-pass pass:123456 --ks-key-alias octapad --key-pass pass:123456 --out MIDI-Octapad.apk aligned.apk
 
       - name: Upload APK Artifact
         uses: actions/upload-artifact@v4
         with:
-          name: MIDI-Octapad-Installable-APK
-          path: android/MIDI-Octapad.apk
+          name: MIDI-Octapad-Vivo-Ready
+          path: android/app/build/outputs/apk/release/app-release.apk
