@@ -2,7 +2,7 @@ name: Build Android APK
 
 on:
   push:
-    branches: [ "main" ]
+    branches: [ main, master ]
   workflow_dispatch:
 
 jobs:
@@ -16,54 +16,28 @@ jobs:
       - name: Setup Node.js
         uses: actions/setup-node@v4
         with:
-          node-version: 22
+          node-version: 18
 
       - name: Setup Java JDK 17
         uses: actions/setup-java@v4
         with:
-          distribution: 'temurin'
+          distribution: 'zulu'
           java-version: '17'
 
       - name: Prepare Web App & Capacitor
         run: |
-          mkdir -p www
-          cp index.html www/
-          npm init -y
-          npm install @capacitor/core@latest @capacitor/cli@latest @capacitor/android@latest
-          npx cap init "MIDI Octapad" "com.hitlo.midioctapad" --web-dir "www"
-          npx cap add android
+          npm install
           npx cap sync android
+          sed -i 's|https\\://services.gradle.org/distributions/gradle-.*-all.zip|https\\://services.gradle.org/distributions/gradle-8.5-bin.zip|g' android/gradle/wrapper/gradle-wrapper.properties
 
-      - name: Patch Duplicate Kotlin Classes
-        run: |
-          cat << 'EOF' >> android/app/build.gradle
-
-          configurations.all {
-              exclude group: 'org.jetbrains.kotlin', module: 'kotlin-stdlib-jdk7'
-              exclude group: 'org.jetbrains.kotlin', module: 'kotlin-stdlib-jdk8'
-          }
-          EOF
-
-      - name: Build and Sign APK
+      - name: Build APK
         run: |
           cd android
           chmod +x gradlew
-          ./gradlew assembleRelease --no-daemon
-
-          # Release Keystore
-          keytool -genkeypair -v -keystore release.keystore -alias octapad -keyalg RSA -keysize 2048 -validity 10000 -storepass 123456 -keypass 123456 -dname "CN=Hitlo, OU=App, O=Dev, L=City, S=State, C=IN"
-
-          # Android SDK build tools path
-          SDK_TOOLS=$(find $ANDROID_SDK_ROOT/build-tools -mindepth 1 -maxdepth 1 -type d | sort -V | tail -n 1)
-
-          # Align
-          $SDK_TOOLS/zipalign -v -p 4 app/build/outputs/apk/release/app-release-unsigned.apk aligned.apk
-
-          # V2/V3 Signature
-          $SDK_TOOLS/apksigner sign --ks release.keystore --ks-pass pass:123456 --ks-key-alias octapad --key-pass pass:123456 --out ../MIDI-Octapad.apk aligned.apk
+          ./gradlew assembleDebug --no-daemon
 
       - name: Upload APK
         uses: actions/upload-artifact@v4
         with:
-          name: MIDI-Octapad-Ready
-          path: MIDI-Octapad.apk
+          name: app-debug
+          path: android/app/build/outputs/apk/debug/app-debug.apk
