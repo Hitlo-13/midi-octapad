@@ -24,10 +24,14 @@ jobs:
           distribution: 'temurin'
           java-version: '17'
 
-      - name: Prepare Web App & Capacitor
+      - name: Initialize App & Setup Capacitor
         run: |
-          npm install
-          npx cap sync android
+          mkdir -p www
+          cp -r *.html *.js *.css www/ 2>/dev/null || true
+          npm init -y
+          npm install @capacitor/core @capacitor/cli @capacitor/android
+          npx cap init "MIDI Octapad" "com.hitlo.midioctapad" --web-dir "www"
+          npx cap add android
 
       - name: Build and Sign APK
         run: |
@@ -45,3 +49,4 @@ jobs:
         with:
           name: midi-octapad-apk
           path: android/app/build/outputs/apk/debug/app-debug.apk
+          
